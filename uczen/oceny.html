@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Oceny</title>
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body class="student-page">
+  <main class="panel student-shell">
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">Panel ucznia</p>
+        <h1>Oceny</h1>
+      </div>
+      <button id="logout" type="button">Wyloguj</button>
+    </header>
+
+    <section class="student-summary" aria-label="Podsumowanie ocen">
+      <div class="metric">
+        <span>Średnia</span>
+        <strong id="average">-</strong>
+      </div>
+      <div class="metric">
+        <span>Liczba ocen</span>
+        <strong id="grades-count">0</strong>
+      </div>
+    </section>
+
+    <section id="lista" aria-live="polite">
+      <p class="empty-state">Ładowanie ocen...</p>
+    </section>
+
+    <a href="panel.html">Wróć do panelu</a>
+  </main>
+
+  <script type="module">
+    import { db } from "../firebase.js";
+    import { requireRole, setupLogout } from "../js/guard.js";
+    import {
+      averageGrade,
+      byId,
+      createElement,
+      formatDateTime,
+      gradeDisplay,
+      renderEmpty,
+      sortByDateDesc
+    } from "../js/helpers.js";
+
+    import {
+      collection,
+      getDocs,
+      query,
+      where
+    } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
+    const list = byId("lista");
+    const average = byId("average");
+    const count = byId("grades-count");
+
+    function renderGrade(grade) {
+      const card = createElement("article", { className: "card" });
+      const top = createElement("div", {
+        className: "page-header",
+        children: [
+          createElement("div", {
+            children: [
+              createElement("strong", { text: grade.kod || "Ocena" }),
+              createElement("p", { className: "muted", text: grade.opis || "Brak opisu" })
+            ]
+          }),
+          createElement("span", { className: "grade-value", text: gradeDisplay(grade) })
+        ]
+      });
+      const date = createElement("p", {
+        className: "muted",
+        text: `Wystawiono: ${formatDateTime(grade.wystawiono || grade.data)}`
+      });
+
+      card.append(top, date);
+      return card;
+    }
+
+    requireRole("uczen", async (user) => {
+      const gradesQuery = query(
+        collection(db, "oceny"),
+        where("uczenUID", "==", user.uid)
+      );
+      const snapshot = await getDocs(gradesQuery);
+      const grades = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+
+      average.textContent = averageGrade(grades);
+      count.textContent = String(grades.length);
+
+      if (!grades.length) {
+        renderEmpty(list, "Nie masz jeszcze ocen.");
+        return;
+      }
+
+      list.replaceChildren(...sortByDateDesc(grades, ["wystawiono", "data"]).map(renderGrade));
+    });
+
+    setupLogout();
+  </script>
+</body>
+</html>

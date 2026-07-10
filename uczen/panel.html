@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panel ucznia</title>
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body class="student-page">
+  <main class="panel student-shell">
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">Panel ucznia</p>
+        <h1 id="student-name">Twoje konto</h1>
+        <p id="student-class" class="muted"></p>
+      </div>
+      <button id="logout" type="button">Wyloguj</button>
+    </header>
+
+    <nav class="student-nav" aria-label="Menu ucznia">
+      <a href="oceny.html">Oceny</a>
+      <a href="sprawdziany.html">Sprawdziany</a>
+      <a href="prace.html">Prace domowe</a>
+    </nav>
+  </main>
+
+  <script type="module">
+    import { requireRole, setupLogout } from "../js/guard.js";
+    import { byId, studentClass, studentName } from "../js/helpers.js";
+
+    requireRole("uczen", (_user, profile) => {
+      byId("student-name").textContent = studentName(profile, "Uczeń");
+      byId("student-class").textContent = `Klasa: ${studentClass(profile)}`;
+    });
+    setupLogout();
+  </script>
+</body>
+</html>
