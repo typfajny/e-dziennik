@@ -104,6 +104,7 @@
       </div>
 
       <div class="dialog-actions">
+        <button id="delete-grade" class="button danger" type="button">Usuń</button>
         <button id="close-grade-dialog" class="button secondary" type="button">Anuluj</button>
         <button type="submit">Zapisz</button>
       </div>
@@ -129,6 +130,7 @@
     import {
       addDoc,
       collection,
+      deleteDoc,
       doc,
       getDocs,
       serverTimestamp,
@@ -149,6 +151,7 @@
     const changeType = byId("change-type");
     const changedGrade = byId("changed-grade");
     const closeGradeDialog = byId("close-grade-dialog");
+    const deleteGradeBtn = byId("delete-grade");
 
     let students = [];
     let rubrics = [];
@@ -447,6 +450,31 @@
       activeGrade = null;
       await loadData();
       renderStudentDetails(studentFilter.value);
+    });
+
+    deleteGradeBtn.addEventListener("click", async () => {
+      if (!activeGrade) {
+        gradeDialog.close();
+        return;
+      }
+
+      const potwierdzenie = confirm("Czy na pewno chcesz usunąć tę ocenę? Tej operacji nie można cofnąć.");
+      
+      if (potwierdzenie) {
+        deleteGradeBtn.disabled = true;
+        try {
+          await deleteDoc(doc(db, "oceny", activeGrade.id));
+          gradeDialog.close();
+          activeGrade = null;
+          await loadData();
+          renderStudentDetails(studentFilter.value);
+        } catch (error) {
+          console.error("Błąd podczas usuwania oceny:", error);
+          alert("Wystąpił błąd podczas usuwania oceny.");
+        } finally {
+          deleteGradeBtn.disabled = false;
+        }
+      }
     });
 
     requireRole("nauczyciel", loadData);
