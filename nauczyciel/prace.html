@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prace domowe</title>
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body class="teacher-page">
+  <main class="panel teacher-shell">
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">Panel nauczyciela</p>
+        <h1>Prace domowe</h1>
+      </div>
+      <button id="logout" type="button">Wyloguj</button>
+    </header>
+
+    <section class="split-grid">
+      <div>
+        <div class="calendar-toolbar">
+          <div>
+            <label for="month">Miesiąc</label>
+            <input id="month" type="month">
+          </div>
+          <button id="new-homework" type="button">+ Dodaj</button>
+        </div>
+        <div id="calendar" class="calendar" aria-live="polite"></div>
+      </div>
+
+      <aside class="section-band">
+        <h2 id="form-title">Nowa praca domowa</h2>
+        <form id="homework-form">
+          <input id="homework-id" type="hidden">
+          <div class="field">
+            <label for="deadline">Do kiedy</label>
+            <input id="deadline" type="date" required>
+          </div>
+          <div class="field">
+            <label for="description">Opis</label>
+            <input id="description" placeholder="Opis pracy domowej" required>
+          </div>
+          <button id="save-homework" type="submit">Zapisz</button>
+          <p id="status" class="error" aria-live="polite"></p>
+        </form>
+      </aside>
+    </section>
+
+    <a href="panel.html">Wróć do panelu</a>
+  </main>
+
+  <script type="module">
+    import { db } from "../firebase.js";
+    import { requireRole, setupLogout } from "../js/guard.js";
+    import {
+      byId,
+      clear,
+      createElement,
+      currentMonthKey,
+      dateKey,
+      formatDate,
+      formatDateTime,
+      monthDays
+    } from "../js/helpers.js";
+
+    import {
+      addDoc,
+      collection,
+      deleteDoc,
+      doc,
+      getDocs,
+      serverTimestamp,
+      updateDoc
+    } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
+    const monthInput = byId("month");
+    const calendar = byId("calendar");
+    const form = byId("homework-form");
+    const formTitle = byId("form-title");
+    const homeworkId = byId("homework-id");
+    const deadlineInput = byId("deadline");
+    const descriptionInput = byId("description");
+    const status = byId("status");
+    const newHomework = byId("new-homework");
+    const weekdays = ["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Nd"];
+    let homeworkItems = [];
+
+    function setStatus(message = "", ok = false) {
+      status.textContent = message;
+      status.className = ok ? "success" : "error";
+    }
+
+    function resetForm(date = "") {
+      formTitle.textContent = "Nowa praca domowa";
+      form.reset();
+      homeworkId.value = "";
+      deadlineInput.value = date;
+      setStatus();
+    }
+
+    function editHomework(homework) {
+      formTitle.textContent = "Edytuj pracę domową";
+      homeworkId.value = homework.id;
+      deadlineInput.value = dateKey(homework.termin);
+      descriptionInput.value = homework.opis || "";
+      setStatus();
+      descriptionInput.focus();
+    }
+
+    async function removeHomework(homework) {
+      if (!confirm("Usunąć tę pracę domową?")) {
+        return;
+      }
+
+      await deleteDoc(doc(db, "prace_domowe", homework.id));
+      await loadHomework();
+    }
+
+    function renderEvent(homework) {
+      const event = createElement("article", {
+        className: "calendar-event",
+        children: [
+          createElement("strong", { text: "Praca domowa" }),
+          createElement("p", { text: `Dodano: ${formatDateTime(homework.zaplanowano || homework.data)}` }),
+          createElement("p", { text: `Do kiedy: ${formatDate(homework.termin)}` }),
+          createElement("p", { className: "muted", text: homework.opis || "Brak opisu" })
+        ]
+      });
+      const actions = createElement("div", { className: "event-actions" });
+      const edit = createElement("button", { className: "icon-button", text: "✎", attrs: { type: "button", title: "Edytuj" } });
+      const remove = createElement("button", { className: "icon-button", text: "×", attrs: { type: "button", title: "Usuń" } });
+      edit.addEventListener("click", () => editHomework(homework));
+      remove.addEventListener("click", () => removeHomework(homework));
+      actions.append(edit, remove);
+      event.append(actions);
+      return event;
+    }
+
+    function renderCalendar() {
+      clear(calendar);
+      weekdays.forEach((weekday) => calendar.append(createElement("div", { className: "calendar-weekday", text: weekday })));
+
+      monthDays(monthInput.value).forEach((day) => {
+        if (!day) {
+          calendar.append(createElement("div", { className: "calendar-day is-empty" }));
+          return;
+        }
+
+        const key = dateKey(day);
+        const dayItems = homeworkItems.filter((homework) => dateKey(homework.termin) === key);
+        const cell = createElement("section", { className: "calendar-day" });
+        const header = createElement("div", { className: "calendar-date" });
+        header.append(createElement("span", { text: String(day.getDate()) }));
+
+        if (!dayItems.length) {
+          const add = createElement("button", { className: "icon-button", text: "+", attrs: { type: "button", title: "Dodaj pracę domową" } });
+          add.addEventListener("click", () => resetForm(key));
+          header.append(add);
+        }
+
+        cell.append(header);
+        dayItems.forEach((homework) => cell.append(renderEvent(homework)));
+        calendar.append(cell);
+      });
+    }
+
+    async function loadHomework() {
+      const snapshot = await getDocs(collection(db, "prace_domowe"));
+      homeworkItems = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      renderCalendar();
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      setStatus();
+
+      const payload = {
+        termin: deadlineInput.value,
+        opis: descriptionInput.value.trim(),
+        updatedAt: serverTimestamp()
+      };
+
+      if (!payload.termin || !payload.opis) {
+        setStatus("Uzupełnij termin i opis.");
+        return;
+      }
+
+      if (homeworkId.value) {
+        await updateDoc(doc(db, "prace_domowe", homeworkId.value), payload);
+      } else {
+        await addDoc(collection(db, "prace_domowe"), {
+          ...payload,
+          zaplanowano: serverTimestamp(),
+          data: serverTimestamp()
+        });
+      }
+
+      setStatus("Zapisano.", true);
+      resetForm(payload.termin);
+      await loadHomework();
+    });
+
+    newHomework.addEventListener("click", () => resetForm(`${monthInput.value}-01`));
+    monthInput.addEventListener("change", renderCalendar);
+
+    monthInput.value = currentMonthKey();
+    requireRole("nauczyciel", loadHomework);
+    setupLogout();
+  </script>
+</body>
+</html>

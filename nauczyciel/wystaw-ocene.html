@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wystaw ocenę</title>
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body class="teacher-page">
+  <main class="panel teacher-shell">
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">Panel nauczyciela</p>
+        <h1>Wystaw ocenę</h1>
+      </div>
+      <button id="logout" type="button">Wyloguj</button>
+    </header>
+
+    <section class="teacher-grid">
+      <div>
+        <section class="section-band">
+          <div class="page-header">
+            <div>
+              <h2>Rubryki ocen</h2>
+              <p class="muted">Dodaj krótki kod i opis, a potem wpisuj oceny uczniom w tej rubryce.</p>
+            </div>
+            <button id="show-rubric-form" class="icon-button" type="button" aria-label="Dodaj rubrykę" title="Dodaj rubrykę">✎</button>
+          </div>
+
+          <form id="rubric-form" class="form-grid" hidden>
+            <div class="field">
+              <label for="rubric-code">Krótki kod</label>
+              <input id="rubric-code" maxlength="16" placeholder="np. MAT01" required>
+            </div>
+            <div class="field">
+              <label for="rubric-description">Opis</label>
+              <input id="rubric-description" placeholder="np. Kartkówka z ułamków" required>
+            </div>
+            <button type="submit">Zapisz rubrykę</button>
+          </form>
+          <p id="rubric-status" class="error" aria-live="polite"></p>
+        </section>
+
+        <section>
+          <h2>Tabela ocen</h2>
+          <div class="data-table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Kod</th>
+                  <th>Opis</th>
+                  <th>Dodaj ocenę</th>
+                  <th>Wystawione oceny</th>
+                </tr>
+              </thead>
+              <tbody id="rubrics-table">
+                <tr><td colspan="4">Ładowanie...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <aside class="section-band student-profile">
+        <h2>Dane ucznia</h2>
+        <div class="field">
+          <label for="student-filter">Wybierz ucznia</label>
+          <select id="student-filter">
+            <option value="">Ładowanie uczniów...</option>
+          </select>
+        </div>
+        <div id="student-details" aria-live="polite">
+          <p class="empty-state">Wybierz ucznia, aby zobaczyć dane.</p>
+        </div>
+      </aside>
+    </section>
+
+    <a href="panel.html">Wróć do panelu</a>
+  </main>
+
+  <dialog id="grade-dialog" class="dialog">
+    <form id="grade-change-form">
+      <h2 id="grade-dialog-title">Zmień ocenę</h2>
+      <p id="grade-dialog-context" class="muted"></p>
+
+      <div class="field">
+        <label for="change-type">Rodzaj zmiany</label>
+        <select id="change-type">
+          <option value="poprawa">Poprawa oceny</option>
+          <option value="korekta">Korekta oceny</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="changed-grade">Nowa ocena</label>
+        <select id="changed-grade">
+          <option>1</option>
+          <option>2</option>
+          <option>3</option>
+          <option>4</option>
+          <option>5</option>
+          <option>6</option>
+        </select>
+      </div>
+
+      <div class="dialog-actions">
+        <button id="close-grade-dialog" class="button secondary" type="button">Anuluj</button>
+        <button type="submit">Zapisz</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module">
+    import { db } from "../firebase.js";
+    import { requireRole, setupLogout } from "../js/guard.js";
+    import {
+      averageGrade,
+      byId,
+      clear,
+      createElement,
+      formatDateTime,
+      gradeDisplay,
+      renderEmpty,
+      sortByDateDesc,
+      studentClass,
+      studentName
+    } from "../js/helpers.js";
+
+    import {
+      addDoc,
+      collection,
+      doc,
+      getDocs,
+      serverTimestamp,
+      updateDoc
+    } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
+    const rubricForm = byId("rubric-form");
+    const rubricCode = byId("rubric-code");
+    const rubricDescription = byId("rubric-description");
+    const rubricStatus = byId("rubric-status");
+    const rubricsTable = byId("rubrics-table");
+    const showRubricForm = byId("show-rubric-form");
+    const studentFilter = byId("student-filter");
+    const studentDetails = byId("student-details");
+    const gradeDialog = byId("grade-dialog");
+    const gradeChangeForm = byId("grade-change-form");
+    const gradeDialogContext = byId("grade-dialog-context");
+    const changeType = byId("change-type");
+    const changedGrade = byId("changed-grade");
+    const closeGradeDialog = byId("close-grade-dialog");
+
+    let students = [];
+    let rubrics = [];
+    let grades = [];
+    let activeGrade = null;
+
+    function setRubricStatus(message = "", type = "error") {
+      rubricStatus.textContent = message;
+      rubricStatus.className = type === "success" ? "success" : "error";
+    }
+
+    function studentOptions(selectedValue = "") {
+      return students.map((student) => {
+        const option = createElement("option", {
+          text: `${studentName(student, student.id)} (${studentClass(student)})`,
+          attrs: { value: student.id }
+        });
+        option.selected = student.id === selectedValue;
+        return option;
+      });
+    }
+
+    function gradeOptions() {
+      return [1, 2, 3, 4, 5, 6].map((grade) => createElement("option", { text: String(grade), attrs: { value: grade } }));
+    }
+
+    function renderStudentFilter() {
+      const selectedValue = studentFilter.value;
+      clear(studentFilter);
+
+      if (!students.length) {
+        studentFilter.append(createElement("option", { text: "Brak uczniów", attrs: { value: "" } }));
+        return;
+      }
+
+      studentFilter.append(createElement("option", { text: "Wybierz ucznia", attrs: { value: "" } }), ...studentOptions(selectedValue));
+    }
+
+    function renderStudentDetails(studentId) {
+      const student = students.find((item) => item.id === studentId);
+
+      if (!student) {
+        renderEmpty(studentDetails, "Wybierz ucznia, aby zobaczyć dane.");
+        return;
+      }
+
+      const studentGrades = sortByDateDesc(
+        grades.filter((grade) => grade.uczenUID === studentId),
+        ["wystawiono", "data"]
+      );
+
+      clear(studentDetails);
+      studentDetails.append(
+        createElement("div", {
+          className: "student-summary",
+          children: [
+            createElement("div", {
+              className: "metric",
+              children: [
+                createElement("span", { text: "Średnia" }),
+                createElement("strong", { text: averageGrade(studentGrades) })
+              ]
+            }),
+            createElement("div", {
+              className: "metric",
+              children: [
+                createElement("span", { text: "Ocen" }),
+                createElement("strong", { text: String(studentGrades.length) })
+              ]
+            })
+          ]
+        }),
+        createElement("p", { text: `Imię i nazwisko: ${studentName(student, student.id)}` }),
+        createElement("p", { text: `Klasa: ${studentClass(student)}` }),
+        createElement("p", { className: "muted", text: student.email ? `Email: ${student.email}` : "" })
+      );
+
+      const list = createElement("div", { className: "profile-list" });
+      studentGrades.forEach((grade) => {
+        list.append(createElement("article", {
+          className: "card",
+          children: [
+            createElement("strong", { text: `${grade.kod || "Ocena"}: ${gradeDisplay(grade)}` }),
+            createElement("p", { text: grade.opis || "Brak opisu" }),
+            createElement("p", { className: "muted", text: `Wystawiono: ${formatDateTime(grade.wystawiono || grade.data)}` })
+          ]
+        }));
+      });
+
+      if (!studentGrades.length) {
+        list.append(createElement("p", { className: "empty-state", text: "Ten uczeń nie ma jeszcze ocen." }));
+      }
+
+      studentDetails.append(list);
+    }
+
+    function renderGradeButton(grade) {
+      const student = students.find((item) => item.id === grade.uczenUID);
+      const button = createElement("button", {
+        className: "grade-button",
+        text: gradeDisplay(grade),
+        attrs: {
+          type: "button",
+          title: `${studentName(student, grade.uczenUID)} - kliknij, aby poprawić albo skorygować ocenę`
+        }
+      });
+
+      button.addEventListener("click", () => {
+        activeGrade = grade;
+        gradeDialogContext.textContent = `${studentName(student, grade.uczenUID)} | ${grade.kod || "Ocena"} | aktualnie: ${gradeDisplay(grade)}`;
+        changedGrade.value = String(grade.ocena || 1);
+        changeType.value = "poprawa";
+        gradeDialog.showModal();
+      });
+
+      return createElement("div", {
+        className: "calendar-event",
+        children: [
+          createElement("strong", { text: studentName(student, grade.uczenUID) }),
+          button,
+          createElement("p", { className: "muted", text: formatDateTime(grade.wystawiono || grade.data) })
+        ]
+      });
+    }
+
+    function renderRubricsTable() {
+      clear(rubricsTable);
+
+      if (!rubrics.length) {
+        const row = rubricsTable.insertRow();
+        const cell = row.insertCell();
+        cell.colSpan = 4;
+        cell.textContent = "Brak rubryk. Kliknij ołówek, dodaj kod i opis.";
+        return;
+      }
+
+      rubrics.forEach((rubric) => {
+        const row = rubricsTable.insertRow();
+        row.insertCell().textContent = rubric.kod;
+        row.insertCell().textContent = rubric.opis;
+
+        const formCell = row.insertCell();
+        const form = createElement("form", { className: "inline-form" });
+        const studentSelect = createElement("select", { children: studentOptions() });
+        const gradeSelect = createElement("select", { children: gradeOptions() });
+        const submit = createElement("button", { text: "Wpisz", attrs: { type: "submit" } });
+
+        form.append(studentSelect, gradeSelect, submit);
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+
+          if (!studentSelect.value) {
+            studentSelect.focus();
+            return;
+          }
+
+          submit.disabled = true;
+
+          try {
+            await addDoc(collection(db, "oceny"), {
+              rubrykaId: rubric.id,
+              uczenUID: studentSelect.value,
+              kod: rubric.kod,
+              opis: rubric.opis,
+              ocena: Number(gradeSelect.value),
+              poprzedniaOcena: null,
+              wystawiono: serverTimestamp(),
+              data: serverTimestamp(),
+              zmiana: "wystawienie"
+            });
+            await loadData();
+            renderStudentDetails(studentFilter.value);
+          } finally {
+            submit.disabled = false;
+          }
+        });
+        formCell.append(form);
+
+        const gradesCell = row.insertCell();
+        const rubricGrades = sortByDateDesc(
+          grades.filter((grade) => grade.rubrykaId === rubric.id || (!grade.rubrykaId && grade.kod === rubric.kod && grade.opis === rubric.opis)),
+          ["wystawiono", "data"]
+        );
+
+        if (!rubricGrades.length) {
+          gradesCell.textContent = "Brak ocen w tej rubryce.";
+        } else {
+          rubricGrades.forEach((grade) => gradesCell.append(renderGradeButton(grade)));
+        }
+      });
+    }
+
+    async function loadStudents() {
+      const snapshot = await getDocs(collection(db, "users"));
+      students = snapshot.docs
+        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+        .filter((user) => user.role === "uczen")
+        .sort((a, b) => studentName(a, a.id).localeCompare(studentName(b, b.id), "pl"));
+    }
+
+    async function loadRubrics() {
+      const snapshot = await getDocs(collection(db, "rubryki_ocen"));
+      rubrics = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+
+      const gradesSnapshot = await getDocs(collection(db, "oceny"));
+      grades = gradesSnapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+
+      const existingKeys = new Set(rubrics.map((rubric) => `${rubric.kod}|${rubric.opis}`));
+      grades.forEach((grade) => {
+        const key = `${grade.kod}|${grade.opis}`;
+
+        if (!grade.rubrykaId && grade.kod && !existingKeys.has(key)) {
+          rubrics.push({
+            id: `legacy-${key}`,
+            kod: grade.kod,
+            opis: grade.opis || "Ocena bez opisu",
+            legacy: true
+          });
+          existingKeys.add(key);
+        }
+      });
+
+      rubrics.sort((a, b) => (a.kod || "").localeCompare(b.kod || "", "pl"));
+    }
+
+    async function loadData() {
+      await Promise.all([loadStudents(), loadRubrics()]);
+      renderStudentFilter();
+      renderRubricsTable();
+    }
+
+    showRubricForm.addEventListener("click", () => {
+      rubricForm.hidden = !rubricForm.hidden;
+      rubricCode.focus();
+    });
+
+    rubricForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      setRubricStatus();
+
+      const kod = rubricCode.value.trim();
+      const opis = rubricDescription.value.trim();
+
+      if (!kod || !opis) {
+        setRubricStatus("Uzupełnij kod i opis rubryki.");
+        return;
+      }
+
+      try {
+        await addDoc(collection(db, "rubryki_ocen"), {
+          kod,
+          opis,
+          utworzono: serverTimestamp()
+        });
+        rubricForm.reset();
+        rubricForm.hidden = true;
+        setRubricStatus("Rubryka zapisana.", "success");
+        await loadData();
+      } catch (error) {
+        console.error(error);
+        setRubricStatus("Nie udało się zapisać rubryki.");
+      }
+    });
+
+    studentFilter.addEventListener("change", () => {
+      renderStudentDetails(studentFilter.value);
+    });
+
+    closeGradeDialog.addEventListener("click", () => {
+      gradeDialog.close();
+    });
+
+    gradeChangeForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      if (!activeGrade) {
+        gradeDialog.close();
+        return;
+      }
+
+      const newGrade = Number(changedGrade.value);
+      const update = {
+        ocena: newGrade,
+        updatedAt: serverTimestamp(),
+        zmiana: changeType.value
+      };
+
+      if (changeType.value === "poprawa") {
+        update.poprzedniaOcena = activeGrade.ocena;
+      } else {
+        update.poprzedniaOcena = null;
+      }
+
+      await updateDoc(doc(db, "oceny", activeGrade.id), update);
+      gradeDialog.close();
+      activeGrade = null;
+      await loadData();
+      renderStudentDetails(studentFilter.value);
+    });
+
+    requireRole("nauczyciel", loadData);
+    setupLogout();
+  </script>
+</body>
+</html>
