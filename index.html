@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nowy Dziennik</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="auth-page">
+  <main class="box auth-card" aria-labelledby="app-title">
+    <p class="eyebrow">Dziennik online</p>
+    <h1 id="app-title">Nowy Dziennik</h1>
+
+    <form id="login-form" onsubmit="document.getElementById('error').textContent='Uruchom stronę przez lokalny serwer, np. http://localhost, a nie przez dwuklik pliku.'; return false;" novalidate>
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" placeholder="jan@example.com" autocomplete="email" required>
+      </div>
+
+      <div class="field">
+        <label for="password">Hasło</label>
+        <input id="password" name="password" type="password" placeholder="Wpisz hasło" autocomplete="current-password" required>
+      </div>
+
+      <button id="login" type="submit">Zaloguj</button>
+      <p id="error" class="error" role="alert" aria-live="polite"></p>
+    </form>
+  </main>
+
+  <script type="module" src="js/auth.js"></script>
+</body>
+</html>
