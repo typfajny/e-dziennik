@@ -1,1 +1,401 @@
 
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zaplanuj lekcję</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+
+<body class="teacher-page">
+
+<main class="panel teacher-shell">
+
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Panel nauczyciela</p>
+    <h1>Plan lekcji</h1>
+  </div>
+  <button id="logout" type="button">Wyloguj</button>
+</header>
+
+
+<section class="split-grid">
+
+<div>
+
+<div class="calendar-toolbar">
+  <div>
+    <label for="month">Miesiąc</label>
+    <input id="month" type="month">
+  </div>
+
+  <button id="new-lesson" type="button">+ Dodaj</button>
+</div>
+
+
+<div id="calendar" class="calendar"></div>
+
+</div>
+
+
+<aside class="section-band">
+
+<h2 id="form-title">Nowa lekcja</h2>
+
+
+<form id="lesson-form">
+
+<input id="lesson-id" type="hidden">
+
+
+<div class="field">
+<label for="date">Data lekcji</label>
+<input id="date" type="date" required>
+</div>
+
+
+<div class="field">
+<label for="time">Czas trwania (minuty)</label>
+<input id="time" type="number" min="1" placeholder="np. 45" required>
+</div>
+
+
+<div class="field">
+<label for="content">Co robiono na lekcji?</label>
+<textarea id="content" placeholder="Opis lekcji..." required></textarea>
+</div>
+
+
+<div class="field">
+<label for="materials">Użyte materiały</label>
+<textarea id="materials" placeholder="np. podręcznik, ćwiczenia, prezentacja"></textarea>
+</div>
+
+
+<button type="submit">Zapisz</button>
+
+<p id="status" class="error"></p>
+
+</form>
+
+</aside>
+
+</section>
+
+
+<a href="panel.html">Wróć do panelu</a>
+
+
+</main>
+
+
+
+<script type="module">
+
+import { db } from "../firebase.js";
+import { requireRole, setupLogout } from "../js/guard.js";
+
+import {
+collection,
+addDoc,
+getDocs,
+doc,
+deleteDoc,
+updateDoc,
+serverTimestamp
+}
+from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
+
+import {
+byId,
+clear,
+createElement,
+currentMonthKey,
+dateKey,
+monthDays,
+formatDate
+}
+from "../js/helpers.js";
+
+
+const monthInput = byId("month");
+const calendar = byId("calendar");
+
+const form = byId("lesson-form");
+
+const idInput = byId("lesson-id");
+const dateInput = byId("date");
+const timeInput = byId("time");
+const contentInput = byId("content");
+const materialsInput = byId("materials");
+
+const status = byId("status");
+
+const newLesson = byId("new-lesson");
+
+
+let lessons=[];
+
+
+function setStatus(text="",ok=false){
+status.textContent=text;
+status.className=ok?"success":"error";
+}
+
+
+
+function resetForm(date=""){
+
+form.reset();
+
+idInput.value="";
+
+dateInput.value=date;
+
+setStatus();
+
+}
+
+
+
+function renderLesson(lesson){
+
+let box=createElement("article",{
+className:"calendar-event",
+children:[
+
+createElement("strong",{
+text:`Lekcja (${lesson.czas} min)`
+}),
+
+createElement("p",{
+text:lesson.temat
+}),
+
+createElement("p",{
+text:`Materiały: ${lesson.materialy || "Brak"}`
+})
+
+]
+
+});
+
+
+let remove=createElement("button",{
+className:"icon-button",
+text:"×",
+attrs:{type:"button"}
+});
+
+
+remove.onclick=async()=>{
+
+if(confirm("Usunąć lekcję?")){
+
+await deleteDoc(doc(db,"lekcje",lesson.id));
+
+loadLessons();
+
+}
+
+};
+
+
+box.append(remove);
+
+return box;
+
+}
+
+
+
+
+function renderCalendar(){
+
+clear(calendar);
+
+
+[
+"Pon",
+"Wt",
+"Śr",
+"Czw",
+"Pt",
+"Sob",
+"Nd"
+]
+.forEach(x=>calendar.append(
+createElement("div",{
+className:"calendar-weekday",
+text:x
+})
+));
+
+
+
+monthDays(monthInput.value).forEach(day=>{
+
+
+if(!day){
+
+calendar.append(
+createElement("div",{
+className:"calendar-day is-empty"
+})
+);
+
+return;
+
+}
+
+
+
+let key=dateKey(day);
+
+
+let events=lessons.filter(
+x=>dateKey(x.data)==key
+);
+
+
+
+let cell=createElement("section",{
+className:"calendar-day"
+});
+
+
+let header=createElement("div",{
+className:"calendar-date"
+});
+
+
+header.append(
+createElement("span",{
+text:String(day.getDate())
+})
+);
+
+
+
+let add=createElement("button",{
+className:"icon-button",
+text:"+",
+attrs:{type:"button"}
+});
+
+
+add.onclick=()=>resetForm(key);
+
+
+header.append(add);
+
+
+cell.append(header);
+
+
+
+events.forEach(x=>{
+cell.append(renderLesson(x));
+});
+
+
+calendar.append(cell);
+
+
+
+});
+
+}
+
+
+
+async function loadLessons(){
+
+let snap=await getDocs(collection(db,"lekcje"));
+
+lessons=snap.docs.map(x=>({
+id:x.id,
+...x.data()
+}));
+
+renderCalendar();
+
+}
+
+
+
+
+form.addEventListener("submit",async e=>{
+
+e.preventDefault();
+
+
+let data={
+
+data:dateInput.value,
+
+czas:Number(timeInput.value),
+
+temat:contentInput.value.trim(),
+
+materialy:materialsInput.value.trim(),
+
+updatedAt:serverTimestamp()
+
+};
+
+
+
+if(!data.data || !data.temat){
+
+setStatus("Uzupełnij wymagane pola.");
+
+return;
+
+}
+
+
+
+await addDoc(collection(db,"lekcje"),{
+
+...data,
+
+dodano:serverTimestamp()
+
+});
+
+
+
+setStatus("Zapisano.",true);
+
+resetForm();
+
+loadLessons();
+
+
+});
+
+
+
+newLesson.onclick=()=>resetForm(`${monthInput.value}-01`);
+
+
+monthInput.value=currentMonthKey();
+
+monthInput.onchange=renderCalendar;
+
+
+
+requireRole("nauczyciel",loadLessons);
+
+setupLogout();
+
+
+</script>
+
+
+</body>
+</html>
