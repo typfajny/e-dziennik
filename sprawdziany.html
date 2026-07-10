@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sprawdziany</title>
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body class="student-page">
+  <main class="panel student-shell">
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">Panel ucznia</p>
+        <h1>Sprawdziany</h1>
+      </div>
+      <button id="logout" type="button">Wyloguj</button>
+    </header>
+
+    <section id="lista" aria-live="polite">
+      <p class="empty-state">Ładowanie sprawdzianów...</p>
+    </section>
+
+    <a href="panel.html">Wróć do panelu</a>
+  </main>
+
+  <script type="module">
+    import { db } from "../firebase.js";
+    import { requireRole, setupLogout } from "../js/guard.js";
+    import {
+      createElement,
+      formatDate,
+      formatDateTime,
+      renderEmpty,
+      sortByDateDesc
+    } from "../js/helpers.js";
+
+    import {
+      collection,
+      getDocs
+    } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
+    const list = document.getElementById("lista");
+
+    function renderExam(exam) {
+      const type = (exam.typ || "Sprawdzian").toUpperCase();
+      return createElement("article", {
+        className: "card",
+        children: [
+          createElement("h3", { text: type }),
+          createElement("p", { text: `Zaplanowana: ${formatDateTime(exam.zaplanowano || exam.dodano)}` }),
+          createElement("p", { text: `Odbędzie się: ${formatDate(exam.odbedzieSie || exam.data)}` }),
+          createElement("p", { className: "muted", text: `Opis: ${exam.opis || "Brak opisu"}` })
+        ]
+      });
+    }
+
+    requireRole("uczen", async () => {
+      const snapshot = await getDocs(collection(db, "sprawdziany"));
+      const exams = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+
+      if (!exams.length) {
+        renderEmpty(list, "Nie ma jeszcze zaplanowanych sprawdzianów.");
+        return;
+      }
+
+      list.replaceChildren(...sortByDateDesc(exams, ["odbedzieSie", "data"]).map(renderExam));
+    });
+
+    setupLogout();
+  </script>
+</body>
+</html>
