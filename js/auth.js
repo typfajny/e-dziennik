@@ -27,15 +27,15 @@ function showError(message = "") {
 function getFriendlyError(error) {
   switch (error?.code) {
     case "auth/invalid-email":
-      return "Podaj poprawny adres email.";
     case "auth/invalid-credential":
     case "auth/user-not-found":
+      return "Podaj poprawny adres email.";
     case "auth/wrong-password":
-      return "Nieprawidłowy email lub hasło.";
+      return "Nieprawidłowe hasło.";
     case "auth/too-many-requests":
       return "Za dużo prób logowania. Spróbuj ponownie za chwilę.";
     case "auth/unauthorized-domain":
-      return "Ta domena nie jest dodana w Firebase Authentication. Dodaj localhost albo 127.0.0.1 w Authorized domains.";
+      return "Ta domena nie jest dodana w Firebase Authentication.";
     case "auth/network-request-failed":
       return "Brak połączenia z Firebase. Sprawdź internet albo uruchom stronę przez lokalny serwer.";
     case "app/profile-not-found":
