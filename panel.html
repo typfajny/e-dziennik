@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panel nauczyciela</title>
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body class="teacher-page">
+  <main class="panel teacher-shell">
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">Panel nauczyciela</p>
+        <h1>Dziennik klasy</h1>
+      </div>
+      <button id="logout" type="button">Wyloguj</button>
+    </header>
+
+    <nav class="actions" aria-label="Menu nauczyciela">
+      <a href="wystaw-ocene.html">Wystaw ocenę</a>
+      <a href="sprawdziany.html">Zaplanuj sprawdzian</a>
+      <a href="prace.html">Dodaj pracę domową</a>
+    </nav>
+  </main>
+
+  <script type="module">
+    import { requireRole, setupLogout } from "../js/guard.js";
+
+    requireRole("nauczyciel");
+    setupLogout();
+  </script>
+</body>
+</html>
